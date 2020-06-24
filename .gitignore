@@ -7,7 +7,14 @@ __pycache__/
 *.so
 
 # Distribution / packaging
+_trial_temp/
 .Python
+.idea/
+runs/
+datasets/processed/
+datasets/cmnist/
+datasets/raw/zip/
+datasets/raw/back/
 build/
 develop-eggs/
 dist/
