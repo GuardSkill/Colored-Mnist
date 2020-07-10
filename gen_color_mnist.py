@@ -13,14 +13,14 @@ from datasets.mnist import MNIST
 def get_color_codes(cpr):
     C = np.random.rand(len(cpr), nb_classes, 3)
     C = C / np.max(C, axis=2)[:, :, None]
-    print(C.shape)
+    print(C.shape)  # (2, 10, 3) random matrix (0-1 in axis 2)
     return C
 
 
 def gen_fgbgcolor_data(loader, img_size=(3, 28, 28), cpr=[0.5, 0.5], noise=10.):
     if cpr is not None:
         assert sum(cpr) == 1, '--cpr must be a non-negative list which sums to 1'
-        Cfg = get_color_codes(cpr)
+        Cfg = get_color_codes(cpr)  # (2, 10, 3) random matrix (0-1 in axis 2)
         Cbg = get_color_codes(cpr)
     else:
         Cfg = get_color_codes([1])
@@ -33,21 +33,22 @@ def gen_fgbgcolor_data(loader, img_size=(3, 28, 28), cpr=[0.5, 0.5], noise=10.):
         targets = targets.cpu().numpy()
         bs = targets.shape[0]
 
-        x = (((x * 255) > 150) * 255).type('torch.FloatTensor')
+        x = (((x * 255) > 150) * 255).type('torch.FloatTensor')  # binary the map  shape=2000.3,28,28   value: 0/255
         x_rgb = torch.ones(x.size(0), 3, x.size()[2], x.size()[3]).type('torch.FloatTensor')
         x_rgb = x_rgb * x
-        x_rgb_fg = 1. * x_rgb
-
-        color_choice = np.argmax(np.random.multinomial(1, cpr, targets.shape[0]), axis=1) if cpr is not None else 0
+        x_rgb_fg = 1. * x_rgb  # 2000.3,28,28
+        # np.random.multinomial(1, cpr, targets.shape[0])----> shape=(M,2)   M=targets.shape[0] 2= cpr.size()
+        color_choice = np.argmax(np.random.multinomial(1, cpr, targets.shape[0]),
+                                 axis=1) if cpr is not None else 0  # (M,)
         c = Cfg[color_choice, targets] if cpr is not None else Cfg[
-            color_choice, np.random.randint(nb_classes, size=targets.shape[0])]
-        c = c.reshape(-1, 3, 1, 1)
+            color_choice, np.random.randint(nb_classes, size=targets.shape[0])]    # 2000,3
+        c = c.reshape(-1, 3, 1, 1)          # 2000,3,1,1
         c = torch.from_numpy(c).type('torch.FloatTensor')
         x_rgb_fg[:, 0] = x_rgb_fg[:, 0] * c[:, 0]
         x_rgb_fg[:, 1] = x_rgb_fg[:, 1] * c[:, 1]
         x_rgb_fg[:, 2] = x_rgb_fg[:, 2] * c[:, 2]
 
-        bg = (255 - x_rgb)
+        bg = (255 - x_rgb)   # invert the original x_rgb  (to color the background)
         # c = C[targets] if np.random.rand()>cpr else C[np.random.randint(C.shape[0], size=targets.shape[0])]
         color_choice = np.argmax(np.random.multinomial(1, cpr, targets.shape[0]), axis=1) if cpr is not None else 0
         c = Cbg[color_choice, targets] if cpr is not None else Cbg[
@@ -61,7 +62,7 @@ def gen_fgbgcolor_data(loader, img_size=(3, 28, 28), cpr=[0.5, 0.5], noise=10.):
         x_rgb = x_rgb + torch.tensor((noise) * np.random.randn(*x_rgb.size())).type('torch.FloatTensor')
         x_rgb = torch.clamp(x_rgb, 0., 255.)
         if i == 0:
-            color_data_x = np.zeros((bs * tot_iters, *img_size))
+            color_data_x = np.zeros((bs * tot_iters, *img_size))   # initiate these images
             color_data_y = np.zeros((bs * tot_iters,))
         color_data_x[i * bs: (i + 1) * bs] = x_rgb / 255.
         color_data_y[i * bs: (i + 1) * bs] = targets

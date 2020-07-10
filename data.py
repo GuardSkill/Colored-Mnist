@@ -36,15 +36,19 @@ def get_dataset(args):
         dim_inp = 28 * 28  # np.prod(train_set.data.size()[1:])
     elif 'cmnist' in args.dataset:
         data_dir_cmnist = args.data + 'cmnist/' + args.dataset + '/'
+        print("Load cmnist dataset from %s"%data_dir_cmnist)
         data_x = np.load(data_dir_cmnist + 'train_x.npy')
         data_y = np.load(data_dir_cmnist + 'train_y.npy')
 
         data_x = torch.from_numpy(data_x).type('torch.FloatTensor')
         data_y = torch.from_numpy(data_y).type('torch.LongTensor')
 
+
         my_dataset = utils.TensorDataset(data_x, data_y)
 
         train_set, valset = _split_train_val(my_dataset, val_fraction=0.1)
+
+        print("Train num: %d || Val num: %d"%(len(train_set),len(valset)))
 
         trainloader = torch.utils.data.DataLoader(train_set, batch_size=args.bs, shuffle=True, num_workers=NUM_WORKERS)
         validloader = torch.utils.data.DataLoader(valset, batch_size=args.bs, shuffle=False,
