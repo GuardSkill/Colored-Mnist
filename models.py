@@ -3,7 +3,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
+from utils import gram_matrix
+
 ACT = F.relu
+
+
+class GramRelationMax(nn.Module):
+    def __init__(self):
+        super(GramRelationMax, self).__init__()
+
+    def forward(self, x1, x2):
+        matrix = gram_matrix(x1, x2)
+        gram_loss = torch.mean(matrix)
+        return gram_loss
 
 
 class MLPLayer(nn.Module):
@@ -126,7 +138,7 @@ class ResNet(nn.Module):
         self.VIB = VIB
         nstage = 3
 
-        self.pre_clf = []
+        self.pre_clf_list = []
 
         assert ((depth - 2) % 6 == 0), 'resnet depth should be 6n+2'
         n = int((depth - 2) / 6)
@@ -145,10 +157,10 @@ class ResNet(nn.Module):
                 subsample = 1 if (i > 0 or stage == 0) else 2
                 layer = resblock(nb_filters_prev, nb_filters_cur, subsample, bn=bn, nresblocks=nstage * n,
                                  affine=affine, kernel_size=3, bias=bias)
-                self.pre_clf.append(layer)
+                self.pre_clf_list.append(layer)
                 nb_filters_prev = nb_filters_cur
 
-        self.pre_clf = nn.Sequential(*self.pre_clf)
+        self.pre_clf = nn.Sequential(*self.pre_clf_list)
 
         if self.VIB:
             self.mn = MLPLayer(nb_filters_cur, 256, 'none', act=False, bias=bias)
@@ -190,12 +202,98 @@ class ResNet(nn.Module):
             return out
 
 
+class ResNet_MaxGram(nn.Module):
+    def __init__(self, depth=56, nb_filters=16, num_classes=10, bn=False, affine=True, kernel_size=3, inp_channels=3,
+                 k=1, pad_conv1=0, bias=False, inp_noise=0, VIB=False,gram_loss=True):  # n=9->Resnet-56
+        super(ResNet_MaxGram, self).__init__()
+        self.inp_noise = inp_noise
+        self.VIB = VIB
+        self.gram_loss = gram_loss
+        nstage = 3
+        self.nstage=nstage
+        self.pre_clf_list = []
+
+        assert ((depth - 2) % 6 == 0), 'resnet depth should be 6n+2'
+        n = int((depth - 2) / 6)
+
+        nfilters = [nb_filters, nb_filters * k, 2 * nb_filters * k, 4 * nb_filters * k, num_classes]
+        self.nfilters = nfilters
+        self.num_classes = num_classes
+        self.conv1 = (
+            nn.Conv2d(inp_channels, nfilters[0], kernel_size=kernel_size, stride=1, padding=pad_conv1, bias=bias))
+        self.bn1 = nn.BatchNorm2d(nfilters[0], affine=affine) if bn else nn.Sequential()
+
+        nb_filters_prev = nb_filters_cur = nfilters[0]
+        for stage in range(nstage):
+            nb_filters_cur = nfilters[stage + 1]
+            for i in range(n):
+                subsample = 1 if (i > 0 or stage == 0) else 2
+                layer = resblock(nb_filters_prev, nb_filters_cur, subsample, bn=bn, nresblocks=nstage * n,
+                                 affine=affine, kernel_size=3, bias=bias)
+                self.pre_clf_list.append(layer)
+                nb_filters_prev = nb_filters_cur
+
+        self.pre_clf = nn.Sequential(*self.pre_clf_list)
+
+        if self.VIB:
+            self.mn = MLPLayer(nb_filters_cur, 256, 'none', act=False, bias=bias)
+            self.logvar = MLPLayer(nb_filters_cur, 256, 'none', act=False, bias=bias)
+            nb_filters_cur = 256
+
+        self.fc = MLPLayer(nb_filters_cur, nfilters[-1], 'none', act=False, bias=bias)
+
+    def forward(self, x, ret_hid=False, train=True):
+        if x.size()[1] == 1:  # if MNIST is given, replicate 1 channel to make input have 3 channel
+            out = torch.ones(x.size(0), 3, x.size(2), x.size(3)).type('torch.cuda.FloatTensor')
+            out = out * x
+        else:
+            out = x
+
+        if self.inp_noise > 0 and train:
+            out = out + self.inp_noise * torch.randn_like(out)
+        hid = self.conv1(out)
+
+        out = self.bn1(hid)
+
+        if self.gram_loss and train:
+            feature_list=[]
+            feature_list.append(out)
+            for layer in  self.pre_clf_list:
+                out=layer(out)
+                feature_list.append(out)
+        else:
+            out = self.pre_clf(out)
+
+        fc = torch.mean(out.view(out.size(0), out.size(1), -1), dim=2)
+        fc = fc.view(fc.size()[0], -1)
+
+        if self.VIB:
+            mn = self.mn(fc)
+            logvar = self.logvar(fc)
+            fc = reparameterize(mn, logvar)
+
+        out = self.fc((fc))
+
+        if ret_hid and not self.gram_loss:
+            return out, hid
+        elif self.VIB and train:
+            return out, mn, logvar
+        elif self.gram_loss and train and ret_hid:
+            return feature_list,out, hid
+        else:
+            return out
+
+
 # Resnet nomenclature: 6n+2 = 3x2xn + 2; 3 stages, each with n number of resblocks containing 2 conv layers each, and finally 2 non-res conv layers
 def ResNet_model(bn=False, num_classes=10, depth=56, nb_filters=16, kernel_size=3, inp_channels=3, k=1, pad_conv1=0,
                  affine=True, inp_noise=0, VIB=False):
     return ResNet(depth=depth, nb_filters=nb_filters, num_classes=num_classes, bn=bn, kernel_size=kernel_size, \
                   inp_channels=inp_channels, k=k, pad_conv1=pad_conv1, affine=affine, inp_noise=inp_noise, VIB=VIB)
 
+def GResNet_model(bn=False, num_classes=10, depth=56, nb_filters=16, kernel_size=3, inp_channels=3, k=1, pad_conv1=0,
+                 affine=True, inp_noise=0, VIB=False):
+    return ResNet_MaxGram(depth=depth, nb_filters=nb_filters, num_classes=num_classes, bn=bn, kernel_size=kernel_size, \
+                  inp_channels=inp_channels, k=k, pad_conv1=pad_conv1, affine=affine, inp_noise=inp_noise, VIB=VIB,gram_loss=True)
 
 def reparameterize(mu, logvar):
     std = torch.exp(0.5 * logvar)

@@ -48,6 +48,26 @@ def pairing_loss(logit1, logit2, stochastic_pairing=False):
     return loss
 
 
+def gram_matrix_self(feat):
+    (b, ch, h, w) = feat.size()
+    feat = feat.view(b, ch, h * w)
+    feat_t = feat.transpose(1, 2)
+    gram = torch.bmm(feat, feat_t) / (ch * h * w)
+    return gram
+
+
+def gram_matrix(feat1, feat2):
+    # https://github.com/pytorch/examples/blob/master/fast_neural_style/neural_style/utils.py
+    (b1, ch1, h1, w1) = feat1.size()
+    (b2, ch2, h2, w2) = feat2.size()
+    assert h1 * w1 == h2 * w2
+    feat1 = feat1.view(b1, ch1, h1 * w1)
+    feat2_t = feat2.view(b2, ch2, h2 * w2).transpose(1, 2)
+
+    gram = torch.bmm(feat1, feat2_t) / (h1 * w1)
+    return gram
+
+
 def dim_permute(h):
     if len(h.size()) > 2:
         h = h.permute(1, 0, 2, 3).contiguous()
@@ -79,7 +99,7 @@ def correlation_reg(hid, targets, within_class=True, subtract_mean=True):
 
             norm = norm_fn(hid[idx], subtract_mean=subtract_mean)
 
-            reg_ += (norm) ** 2                  #the modification 1: L1 Norm
+            reg_ += (norm) ** 2  # the modification 1: L1 Norm
     else:
         norm = norm_fn(hid, subtract_mean=subtract_mean)
         reg_ = (norm) ** 2
