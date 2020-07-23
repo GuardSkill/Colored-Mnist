@@ -100,7 +100,7 @@ if __name__ == '__main__':
     torch.manual_seed(args.seed)
     if use_cuda:
         torch.cuda.manual_seed(args.seed)
-
+    np.random.seed(args.seed)
     ###############################################################################
     # Load data
     ###############################################################################

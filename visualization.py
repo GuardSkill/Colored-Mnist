@@ -89,7 +89,7 @@ if __name__ == '__main__':
         # img = Image.fromarray(np.uint8(cm.gist_earth(i_data)*255),mode='RGB')
         img = Image.fromarray((i_data * 255.).astype('uint8'), mode='RGB')
         create_dir('./visualization/')
-        img.save('./visualization/Train_class_%d_%d.png' % (label, index))
+        img.save('./visualization/class_%d_%d_Train.png' % (label, index))
         if index >= 50:
             break
 
@@ -105,6 +105,6 @@ if __name__ == '__main__':
         i_data = np.rollaxis(i_data, 0, 3)
         # img = Image.fromarray(np.uint8(cm.gist_earth(i_data)*255),mode='RGB')
         img = Image.fromarray((i_data * 255.).astype('uint8'), mode='RGB')
-        img.save('./visualization/Test_class_%d_%d.png' % (label, index))
+        img.save('./visualization/class_%d_%d_Test.png' % (label, index))
         if index >= 50:
             break
